@@ -115,7 +115,7 @@ func buildDestroyClient(name, version string, destroyArgs config.DestroyArgs, ia
 
 var destroy = cli.Command{
 	Name:      "destroy",
-	Aliases:   []string{"d"},
+	Aliases:   []string{"x"},
 	Usage:     "Destroys a Concourse",
 	ArgsUsage: "<name>",
 	Flags:     destroyFlags,
