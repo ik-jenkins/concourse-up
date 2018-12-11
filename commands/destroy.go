@@ -22,7 +22,6 @@ var destroyArgs config.DestroyArgs
 var destroyFlags = []cli.Flag{
 	cli.StringFlag{
 		Name:        "region",
-		Value:       "eu-west-1",
 		Usage:       "(optional) AWS region",
 		EnvVar:      "AWS_REGION",
 		Destination: &destroyArgs.AWSRegion,
@@ -43,53 +42,84 @@ var destroyFlags = []cli.Flag{
 	},
 }
 
+func destroyAction(c *cli.Context, destroyArgs config.DestroyArgs, iaasFactory iaas.Factory) error {
+	name := c.Args().Get(0)
+	if name == "" {
+		return errors.New("Usage is `concourse-up destroy <name>`")
+	}
+
+	version := c.App.Version
+
+	destroyArgs, err := setRegion(c, destroyArgs)
+	if err != nil {
+		return err
+	}
+
+	client, err := buildDestroyClient(name, version, destroyArgs, iaasFactory)
+	if err != nil {
+		return err
+	}
+
+	if !NonInteractiveModeEnabled() {
+		confirm, err := util.CheckConfirmation(os.Stdin, os.Stdout, name)
+		if err != nil {
+			return err
+		}
+
+		if !confirm {
+			fmt.Println("Bailing out...")
+			return nil
+		}
+	}
+
+	return client.Destroy()
+}
+
+func setRegion(c *cli.Context, destroyArgs config.DestroyArgs) (config.DestroyArgs, error) {
+	if !c.IsSet("region") {
+		if destroyArgs.IAAS == "AWS" {
+			destroyArgs.AWSRegion = "eu-west-1"
+		} else if destroyArgs.IAAS == "GCP" {
+			destroyArgs.AWSRegion = "europe-west1"
+		}
+	}
+
+	return destroyArgs, nil
+}
+func buildDestroyClient(name, version string, destroyArgs config.DestroyArgs, iaasFactory iaas.Factory) (*concourse.Client, error) {
+	awsClient, err := iaasFactory(destroyArgs.IAAS, destroyArgs.AWSRegion)
+	if err != nil {
+		return nil, err
+	}
+	terraformClient, err := terraform.New(terraform.DownloadTerraform())
+	if err != nil {
+		return nil, err
+	}
+	client := concourse.NewClient(
+		awsClient,
+		terraformClient,
+		bosh.New,
+		fly.New,
+		certs.Generate,
+		config.New(awsClient, name, destroyArgs.Namespace),
+		nil,
+		os.Stdout,
+		os.Stderr,
+		util.FindUserIP,
+		certs.NewAcmeClient,
+		version,
+	)
+
+	return client, nil
+}
+
 var destroy = cli.Command{
 	Name:      "destroy",
-	Aliases:   []string{"x"},
+	Aliases:   []string{"d"},
 	Usage:     "Destroys a Concourse",
 	ArgsUsage: "<name>",
 	Flags:     destroyFlags,
 	Action: func(c *cli.Context) error {
-		name := c.Args().Get(0)
-		if name == "" {
-			return errors.New("Usage is `concourse-up destroy <name>`")
-		}
-
-		if !NonInteractiveModeEnabled() {
-			confirm, err := util.CheckConfirmation(os.Stdin, os.Stdout, name)
-			if err != nil {
-				return err
-			}
-
-			if !confirm {
-				fmt.Println("Bailing out...")
-				return nil
-			}
-		}
-
-		provider, err := iaas.New(destroyArgs.IAAS, destroyArgs.AWSRegion)
-		if err != nil {
-			return err
-		}
-		terraformClient, err := terraform.New(terraform.DownloadTerraform())
-		if err != nil {
-			return err
-		}
-		client := concourse.NewClient(
-			provider,
-			terraformClient,
-			bosh.New,
-			fly.New,
-			certs.Generate,
-			config.New(provider, name, destroyArgs.Namespace),
-			nil,
-			os.Stdout,
-			os.Stderr,
-			util.FindUserIP,
-			certs.NewAcmeClient,
-			c.App.Version,
-		)
-
-		return client.Destroy()
+		return destroyAction(c, destroyArgs, iaas.New)
 	},
 }

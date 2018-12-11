@@ -77,7 +77,7 @@ type MetadataStringValue struct {
 	Value string `json:"value"`
 }
 
-// Metadata represents output from terraform on AWS or GCP
+// Metadata represents output from terraform on AWS
 type Metadata struct {
 	ATCPublicIP              MetadataStringValue `json:"atc_public_ip" valid:"required"`
 	ATCSecurityGroupID       MetadataStringValue `json:"atc_security_group_id" valid:"required"`
